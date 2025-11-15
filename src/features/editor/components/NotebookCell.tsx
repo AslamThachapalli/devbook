@@ -7,7 +7,7 @@ import { markdown, markdownLanguage } from "@codemirror/lang-markdown";
 import { languages } from "@codemirror/language-data";
 import { whiteLight } from "@uiw/codemirror-theme-white";
 import { noctisLilac } from "@uiw/codemirror-theme-noctis-lilac";
-import { useState } from "react";
+import React, { useImperativeHandle, useState } from "react";
 import { IconButton } from "../../../components";
 import {
     ArrowDown,
@@ -20,12 +20,24 @@ import {
 
 export type CellType = "markdown" | "code";
 
+type CodeCellOutput = { type: "stdout"; data: string };
+
 export interface Cell {
     id: string;
     type: CellType;
     source: string;
-    output?: { type: "stdout"; data: string };
+    output?: CodeCellOutput;
 }
+
+export type CellExecutedOutput = { cellId: string } & (
+    | {
+          cellType: "markdown";
+      }
+    | {
+          cellType: "code";
+          output?: CodeCellOutput;
+      }
+);
 
 export interface NotebookCellProps {
     cell: Cell;
@@ -33,15 +45,24 @@ export interface NotebookCellProps {
     onChange: (source: string) => void;
     onClick: () => void;
     language?: "js" | "ts";
+    onCellExecuted?: (output: CellExecutedOutput) => void;
 }
 
-export function NotebookCell({
-    cell,
-    isActive,
-    onChange,
-    onClick,
-    language,
-}: NotebookCellProps) {
+export interface NotebookCellRef {
+    executeCell: () => void;
+}
+
+export const NotebookCell = React.forwardRef<
+    NotebookCellRef,
+    NotebookCellProps
+>((props, ref) => {
+    const { cell, isActive, onChange, onClick, language, onCellExecuted } =
+        props;
+
+    useImperativeHandle(ref, () => ({
+        executeCell,
+    }));
+
     const [cellHeight, setCellHeight] = useState<"25px" | undefined>(undefined);
     const [showMarkdown, setShowMarkdown] = useState(false);
 
@@ -84,8 +105,13 @@ export function NotebookCell({
     function executeCell() {
         if (cell.type === "markdown") {
             setShowMarkdown(true);
+            onCellExecuted?.({ cellId: cell.id, cellType: "markdown" });
         } else {
-            console.log("Executing code cell");
+            onCellExecuted?.({
+                cellId: cell.id,
+                cellType: "code",
+                output: { type: "stdout", data: "Hello, world!" },
+            });
         }
     }
 
@@ -118,7 +144,7 @@ export function NotebookCell({
                     </div>
                 )}
                 {cell.type === "markdown" && showMarkdown && (
-                    <div onDoubleClick={handleMarkdownDoubleClick}>
+                    <div onDoubleClick={handleMarkdownDoubleClick}  onClick={handleCellClick}>
                         <article className="prose prose-sm max-w-none prose-headings:mt-2 prose-headings:mb-1 prose-p:my-2">
                             <Markdown
                                 remarkPlugins={[remarkGfm]}
@@ -159,7 +185,15 @@ export function NotebookCell({
                         </article>
                     </div>
                 )}
-                {((cell.type === 'code' && isActive) || (cell.type === "markdown" && !showMarkdown && isActive)) && (  
+                {cell.type === "code" && cell.output && (
+                    <div className="text-gray-500 text-sm">
+                        {cell.output.data}
+                    </div>
+                )}
+                {((cell.type === "code" && isActive) ||
+                    (cell.type === "markdown" &&
+                        !showMarkdown &&
+                        isActive)) && (
                     <div className="flex items-center gap-1 absolute top-1 right-1">
                         <IconButton
                             icon={<Play size={16} />}
@@ -190,4 +224,4 @@ export function NotebookCell({
             </div>
         </div>
     );
-}
+});
