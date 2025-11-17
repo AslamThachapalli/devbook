@@ -20,7 +20,7 @@ import {
 
 export type CellType = "markdown" | "code";
 
-type CodeCellOutput = { type: "stdout"; data: string };
+type CodeCellOutput = { type: "stdout" | "stderr"; data: string };
 
 export interface Cell {
     id: string;
@@ -46,6 +46,7 @@ export interface NotebookCellProps {
     onClick: () => void;
     language?: "js" | "ts";
     onCellExecuted?: (output: CellExecutedOutput) => void;
+    isExecuting?: boolean;
 }
 
 export interface NotebookCellRef {
@@ -56,8 +57,15 @@ export const NotebookCell = React.forwardRef<
     NotebookCellRef,
     NotebookCellProps
 >((props, ref) => {
-    const { cell, isActive, onChange, onClick, language, onCellExecuted } =
-        props;
+    const {
+        cell,
+        isActive,
+        onChange,
+        onClick,
+        language,
+        onCellExecuted,
+        isExecuting = false,
+    } = props;
 
     useImperativeHandle(ref, () => ({
         executeCell,
@@ -144,7 +152,10 @@ export const NotebookCell = React.forwardRef<
                     </div>
                 )}
                 {cell.type === "markdown" && showMarkdown && (
-                    <div onDoubleClick={handleMarkdownDoubleClick}  onClick={handleCellClick}>
+                    <div
+                        onDoubleClick={handleMarkdownDoubleClick}
+                        onClick={handleCellClick}
+                    >
                         <article className="prose prose-sm max-w-none prose-headings:mt-2 prose-headings:mb-1 prose-p:my-2">
                             <Markdown
                                 remarkPlugins={[remarkGfm]}
@@ -185,9 +196,24 @@ export const NotebookCell = React.forwardRef<
                         </article>
                     </div>
                 )}
-                {cell.type === "code" && cell.output && (
-                    <div className="text-gray-500 text-sm">
-                        {cell.output.data}
+                {cell.type === "code" && (
+                    <div className="mt-2">
+                        {isExecuting && (
+                            <div className="text-gray-400 text-sm italic">
+                                Executing...
+                            </div>
+                        )}
+                        {cell.output && !isExecuting && (
+                            <div
+                                className={`text-sm ${
+                                    cell.output.type === "stderr"
+                                        ? "text-red-600"
+                                        : "text-gray-500"
+                                }`}
+                            >
+                                {cell.output.data}
+                            </div>
+                        )}
                     </div>
                 )}
                 {((cell.type === "code" && isActive) ||
@@ -198,6 +224,7 @@ export const NotebookCell = React.forwardRef<
                         <IconButton
                             icon={<Play size={16} />}
                             onClick={executeCell}
+                            disabled={isExecuting}
                         />
                         <IconButton
                             icon={<ArrowUp size={16} />}

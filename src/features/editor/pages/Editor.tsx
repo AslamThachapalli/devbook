@@ -8,8 +8,13 @@ import {
     type CellType,
     type NotebookCellRef,
 } from "../components/NotebookCell";
+import { useAppDispatch } from "../../../applicationState";
+import { saveNotebookThunk } from "../../../applicationState/editorSlice";
+import { executionService } from "../../../services/core/execution";
 
 export function Editor() {
+    const dispatch = useAppDispatch();
+
     const notebookRefs = React.useRef<{ [id: string]: NotebookCellRef | null }>(
         {}
     );
@@ -19,8 +24,34 @@ export function Editor() {
     ]);
     const [activeCellId, setActiveCellId] = React.useState<string>("");
     const [language, setLanguage] = React.useState<"js" | "ts">("js");
+    const [executingCellId, setExecutingCellId] = React.useState<string | null>(
+        null
+    );
 
     const activeCell = cells.find((cell) => cell.id === activeCellId);
+
+    // Initialize execution service on mount
+    React.useEffect(() => {
+        executionService.initialize().catch((error) => {
+            console.error("Failed to initialize execution service:", error);
+        });
+
+        // Cleanup: destroy execution service on unmount
+        return () => {
+            executionService.destroy().catch((error) => {
+                console.error("Failed to destroy execution service:", error);
+            });
+        };
+    }, []);
+
+    // Reset execution context when language changes
+    React.useEffect(() => {
+        if (language === "js") {
+            executionService.reset().catch((error) => {
+                console.error("Failed to reset execution service:", error);
+            });
+        }
+    }, [language]);
 
     function handleAddCell() {
         const newCell: Cell = {
@@ -48,9 +79,92 @@ export function Editor() {
         }
     }
 
-    function handleExecuteCell(id: string) {
-        if (notebookRefs.current[id]) {
-            notebookRefs.current[id]?.executeCell();
+    /**
+     * Execute a cell with stateful context from preceding cells
+     * For code cells, executes all preceding code cells first to build context
+     */
+    async function handleExecuteCell(id: string) {
+        const cell = cells.find((c) => c.id === id);
+        if (!cell) return;
+
+        // For markdown cells, just render them
+        if (cell.type === "markdown") {
+            if (notebookRefs.current[id]) {
+                notebookRefs.current[id]?.executeCell();
+            }
+            return;
+        }
+
+        // For code cells, ensure stateful execution
+        if (cell.type === "code" && language === "js") {
+            setExecutingCellId(id);
+
+            try {
+                // Find all code cells before this one
+                const cellIndex = cells.findIndex((c) => c.id === id);
+                const precedingCells = cells.slice(0, cellIndex);
+
+                // Execute all preceding code cells first to build context
+                // This ensures stateful execution like Jupyter notebooks
+                for (const precedingCell of precedingCells) {
+                    if (
+                        precedingCell.type === "code" &&
+                        precedingCell.source.trim()
+                    ) {
+                        try {
+                            await executionService.execute(
+                                precedingCell.source,
+                                precedingCell.id
+                            );
+                        } catch (error) {
+                            // Log error but continue - some cells might have errors
+                            console.warn(
+                                `Error executing preceding cell ${precedingCell.id}:`,
+                                error
+                            );
+                        }
+                    }
+                }
+
+                // Now execute the current cell
+                const result = await executionService.execute(cell.source, id);
+
+                // Update cell output
+                handleOnCellExecuted({
+                    cellId: id,
+                    cellType: "code",
+                    output: result.output
+                        ? {
+                              type: result.output.type,
+                              data: result.output.data,
+                          }
+                        : result.error
+                        ? {
+                              type: "stdout",
+                              data: `Error: ${result.error.message}`,
+                          }
+                        : undefined,
+                });
+            } catch (error) {
+                // Handle execution error
+                const errorMessage =
+                    error instanceof Error ? error.message : String(error);
+                handleOnCellExecuted({
+                    cellId: id,
+                    cellType: "code",
+                    output: {
+                        type: "stdout",
+                        data: `Execution error: ${errorMessage}`,
+                    },
+                });
+            } finally {
+                setExecutingCellId(null);
+            }
+        } else {
+            // For non-JS code cells or if execution service is not available
+            if (notebookRefs.current[id]) {
+                notebookRefs.current[id]?.executeCell();
+            }
         }
     }
 
@@ -76,6 +190,21 @@ export function Editor() {
         setActiveCellId("");
     }
 
+    function handleSaveNotebook() {
+        dispatch(
+            saveNotebookThunk({
+                notebook: {
+                    id: crypto.randomUUID(),
+                    cells: cells,
+                    language: language,
+                    name: "Untitled",
+                    path: "",
+                    writable: true,
+                },
+            })
+        );
+    }
+
     return (
         <div className="min-h-screen bg-gray-50">
             <div className="py-1 shadow-sm bg-white">
@@ -83,7 +212,7 @@ export function Editor() {
                     <div className="flex gap-1">
                         <IconButton
                             icon={<Save size={16} />}
-                            onClick={() => {}}
+                            onClick={handleSaveNotebook}
                         />
                         <IconButton
                             icon={<Plus size={16} />}
@@ -111,7 +240,17 @@ export function Editor() {
                             { value: "ts", label: "TypeScript" },
                         ]}
                         value={language}
-                        onChange={(value) => setLanguage(value as "js" | "ts")}
+                        onChange={(value) => {
+                            const newLanguage = value as "js" | "ts";
+                            setLanguage(newLanguage);
+                            // Clear all cell outputs when language changes
+                            setCells((prev) =>
+                                prev.map((cell) => ({
+                                    ...cell,
+                                    output: undefined,
+                                }))
+                            );
+                        }}
                     />
                 </div>
             </div>
@@ -133,6 +272,7 @@ export function Editor() {
                         }}
                         language={language}
                         onCellExecuted={handleOnCellExecuted}
+                        isExecuting={executingCellId === cell.id}
                     />
                 ))}
             </div>
