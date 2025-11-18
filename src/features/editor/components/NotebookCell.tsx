@@ -14,7 +14,6 @@ import {
     ArrowDownToLine,
     ArrowUp,
     ArrowUpFromLine,
-    Play,
     Trash,
 } from "lucide-react";
 
@@ -47,6 +46,11 @@ export interface NotebookCellProps {
     language?: "js" | "ts";
     onCellExecuted?: (output: CellExecutedOutput) => void;
     isExecuting?: boolean;
+    onMoveUp?: () => void;
+    onMoveDown?: () => void;
+    onAddAbove?: () => void;
+    onAddBelow?: () => void;
+    onDelete?: () => void;
 }
 
 export interface NotebookCellRef {
@@ -65,6 +69,11 @@ export const NotebookCell = React.forwardRef<
         language,
         onCellExecuted,
         isExecuting = false,
+        onMoveUp,
+        onMoveDown,
+        onAddAbove,
+        onAddBelow,
+        onDelete,
     } = props;
 
     useImperativeHandle(ref, () => ({
@@ -220,31 +229,39 @@ export const NotebookCell = React.forwardRef<
                     (cell.type === "markdown" &&
                         !showMarkdown &&
                         isActive)) && (
-                    <div className="flex items-center gap-1 absolute top-1 right-1">
-                        <IconButton
+                    <div
+                        className="flex items-center gap-1 absolute top-1 right-1"
+                        onClick={(e) => e.stopPropagation()}
+                    >
+                        {/* <IconButton
                             icon={<Play size={16} />}
                             onClick={executeCell}
                             disabled={isExecuting}
-                        />
+                        /> */}
                         <IconButton
                             icon={<ArrowUp size={16} />}
-                            onClick={() => {}}
+                            onClick={() => onMoveUp?.()}
+                            hintText="Move cell up"
                         />
                         <IconButton
                             icon={<ArrowDown size={16} />}
-                            onClick={() => {}}
+                            onClick={() => onMoveDown?.()}
+                            hintText="Move cell down"
                         />
                         <IconButton
                             icon={<ArrowUpFromLine size={16} />}
-                            onClick={() => {}}
+                            onClick={() => onAddAbove?.()}
+                            hintText="Add cell above"
                         />
                         <IconButton
                             icon={<ArrowDownToLine size={16} />}
-                            onClick={() => {}}
+                            onClick={() => onAddBelow?.()}
+                            hintText="Add cell below"
                         />
                         <IconButton
                             icon={<Trash size={16} />}
-                            onClick={() => {}}
+                            onClick={() => onDelete?.()}
+                            hintText="Delete cell"
                         />
                     </div>
                 )}

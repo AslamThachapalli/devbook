@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useCallback } from "react";
 import { Play, Plus, Save } from "lucide-react";
 import { IconButton, SelectInput } from "../../../components";
 import {
@@ -53,6 +53,89 @@ export function Editor() {
         setCells((prev) => [...prev, newCell]);
         setActiveCellId(newCell.id);
     }
+
+    const handleMoveCellUp = useCallback((id: string) => {
+        setCells((prev) => {
+            const index = prev.findIndex((cell) => cell.id === id);
+            if (index <= 0) return prev; // Can't move up if already at top
+
+            const newCells = [...prev];
+            [newCells[index - 1], newCells[index]] = [
+                newCells[index],
+                newCells[index - 1],
+            ];
+            return newCells;
+        });
+    }, []);
+
+    const handleMoveCellDown = useCallback((id: string) => {
+        setCells((prev) => {
+            const index = prev.findIndex((cell) => cell.id === id);
+            if (index < 0 || index >= prev.length - 1) return prev; // Can't move down if already at bottom
+
+            const newCells = [...prev];
+            [newCells[index], newCells[index + 1]] = [
+                newCells[index + 1],
+                newCells[index],
+            ];
+            return newCells;
+        });
+    }, []);
+
+    const handleAddCellAbove = useCallback((id: string) => {
+        const newCell: Cell = {
+            id: crypto.randomUUID(),
+            type: "markdown",
+            source: "",
+        };
+        setCells((prev) => {
+            const index = prev.findIndex((cell) => cell.id === id);
+            if (index < 0) return prev;
+            const newCells = [...prev];
+            newCells.splice(index, 0, newCell);
+            return newCells;
+        });
+        setActiveCellId(newCell.id);
+    }, []);
+
+    const handleAddCellBelow = useCallback((id: string) => {
+        const newCell: Cell = {
+            id: crypto.randomUUID(),
+            type: "markdown",
+            source: "",
+        };
+        setCells((prev) => {
+            const index = prev.findIndex((cell) => cell.id === id);
+            if (index < 0) return prev;
+            const newCells = [...prev];
+            newCells.splice(index + 1, 0, newCell);
+            return newCells;
+        });
+        setActiveCellId(newCell.id);
+    }, []);
+
+    const handleDeleteCell = useCallback(
+        (id: string) => {
+            setCells((prev) => {
+                const filtered = prev.filter((cell) => cell.id !== id);
+                // If we deleted the active cell, activate the previous one or the first one
+                if (id === activeCellId) {
+                    const deletedIndex = prev.findIndex(
+                        (cell) => cell.id === id
+                    );
+                    if (deletedIndex > 0) {
+                        setActiveCellId(prev[deletedIndex - 1].id);
+                    } else if (filtered.length > 0) {
+                        setActiveCellId(filtered[0].id);
+                    } else {
+                        setActiveCellId("");
+                    }
+                }
+                return filtered;
+            });
+        },
+        [activeCellId]
+    );
 
     function handleCellChange(id: string, source: string) {
         setCells((prev) =>
@@ -154,6 +237,83 @@ export function Editor() {
         setActiveCellId("");
     }
 
+    // Keyboard shortcuts for cell operations
+    React.useEffect(() => {
+        function handleKeyDown(event: KeyboardEvent) {
+            // Only handle shortcuts when a cell is active
+            if (!activeCellId) return;
+
+            // Skip if it's just a modifier key being pressed
+            const isModifierKey =
+                event.key === "Alt" ||
+                event.key === "Control" ||
+                event.key === "Meta" ||
+                event.key === "Shift";
+
+            if (isModifierKey) return;
+
+            // Detect Mac (more reliable method)
+            const isMac =
+                navigator.platform.toUpperCase().indexOf("MAC") >= 0 ||
+                navigator.userAgent.toUpperCase().indexOf("MAC") >= 0;
+
+            // Mac: Cmd+Shift+key, Windows/Linux: Alt+key
+            // Also allow Alt+key on Mac as fallback for better compatibility
+            const isMacShortcut =
+                isMac &&
+                event.metaKey &&
+                event.shiftKey &&
+                !event.ctrlKey &&
+                !event.altKey;
+            const isWindowsShortcut =
+                event.altKey &&
+                !event.ctrlKey &&
+                !event.metaKey &&
+                !event.shiftKey;
+
+            if (isMacShortcut || isWindowsShortcut) {
+                switch (event.key.toLowerCase()) {
+                    case "a":
+                        event.preventDefault();
+                        handleAddCellAbove(activeCellId);
+                        break;
+                    case "b":
+                        event.preventDefault();
+                        handleAddCellBelow(activeCellId);
+                        break;
+                    case "d":
+                        event.preventDefault();
+                        handleDeleteCell(activeCellId);
+                        break;
+                    case "r":
+                        event.preventDefault();
+                        handleExecuteCell(activeCellId);
+                        break;
+                    case "arrowup":
+                        event.preventDefault();
+                        handleMoveCellUp(activeCellId);
+                        break;
+                    case "arrowdown":
+                        event.preventDefault();
+                        handleMoveCellDown(activeCellId);
+                        break;
+                }
+            }
+        }
+
+        window.addEventListener("keydown", handleKeyDown);
+        return () => {
+            window.removeEventListener("keydown", handleKeyDown);
+        };
+    }, [
+        activeCellId,
+        handleAddCellAbove,
+        handleAddCellBelow,
+        handleDeleteCell,
+        handleMoveCellUp,
+        handleMoveCellDown,
+    ]);
+
     function handleSaveNotebook() {
         dispatch(
             saveNotebookThunk({
@@ -171,20 +331,23 @@ export function Editor() {
 
     return (
         <div className="min-h-screen bg-gray-50">
-            <div className="py-1 shadow-sm bg-white">
+            <div className="py-1 shadow-sm bg-white fixed top-0 right-0 left-0 z-10">
                 <div className="flex items-center justify-between max-w-5xl mx-auto">
                     <div className="flex gap-1">
                         <IconButton
                             icon={<Save size={16} />}
                             onClick={handleSaveNotebook}
+                            hintText="Save Notebook"
                         />
                         <IconButton
                             icon={<Plus size={16} />}
                             onClick={handleAddCell}
+                            hintText="Add new cell"
                         />
                         <IconButton
                             icon={<Play size={16} />}
                             onClick={() => handleExecuteCell(activeCellId)}
+                            hintText="Execute cell (cmd+shift+r/alt+r)"
                         />
                         <SelectInput
                             options={[
@@ -237,6 +400,11 @@ export function Editor() {
                         language={language}
                         onCellExecuted={handleOnCellExecuted}
                         isExecuting={executingCellId === cell.id}
+                        onMoveUp={() => handleMoveCellUp(cell.id)}
+                        onMoveDown={() => handleMoveCellDown(cell.id)}
+                        onAddAbove={() => handleAddCellAbove(cell.id)}
+                        onAddBelow={() => handleAddCellBelow(cell.id)}
+                        onDelete={() => handleDeleteCell(cell.id)}
                     />
                 ))}
             </div>

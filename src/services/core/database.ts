@@ -14,7 +14,7 @@ export function openDatabase(): Promise<IDBDatabase> {
 
             if (!db.objectStoreNames.contains(STORE_NAME)) {
                 const store = db.createObjectStore(STORE_NAME, {
-                    keyPath: "name",
+                    keyPath: "path",
                 });
             }
         };
