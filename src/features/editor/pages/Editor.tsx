@@ -44,15 +44,6 @@ export function Editor() {
         };
     }, []);
 
-    // Reset execution context when language changes
-    React.useEffect(() => {
-        if (language === "js") {
-            executionService.reset().catch((error) => {
-                console.error("Failed to reset execution service:", error);
-            });
-        }
-    }, [language]);
-
     function handleAddCell() {
         const newCell: Cell = {
             id: crypto.randomUUID(),
@@ -80,8 +71,7 @@ export function Editor() {
     }
 
     /**
-     * Execute a cell with stateful context from preceding cells
-     * For code cells, executes all preceding code cells first to build context
+     * Execute a cell in isolation - no shared state between cells
      */
     async function handleExecuteCell(id: string) {
         const cell = cells.find((c) => c.id === id);
@@ -95,38 +85,12 @@ export function Editor() {
             return;
         }
 
-        // For code cells, ensure stateful execution
+        // For code cells, execute in isolation
         if (cell.type === "code" && language === "js") {
             setExecutingCellId(id);
 
             try {
-                // Find all code cells before this one
-                const cellIndex = cells.findIndex((c) => c.id === id);
-                const precedingCells = cells.slice(0, cellIndex);
-
-                // Execute all preceding code cells first to build context
-                // This ensures stateful execution like Jupyter notebooks
-                for (const precedingCell of precedingCells) {
-                    if (
-                        precedingCell.type === "code" &&
-                        precedingCell.source.trim()
-                    ) {
-                        try {
-                            await executionService.execute(
-                                precedingCell.source,
-                                precedingCell.id
-                            );
-                        } catch (error) {
-                            // Log error but continue - some cells might have errors
-                            console.warn(
-                                `Error executing preceding cell ${precedingCell.id}:`,
-                                error
-                            );
-                        }
-                    }
-                }
-
-                // Now execute the current cell
+                // Execute the current cell only - no preceding cells
                 const result = await executionService.execute(cell.source, id);
 
                 // Update cell output
