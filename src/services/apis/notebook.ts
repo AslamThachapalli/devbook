@@ -18,6 +18,53 @@ export interface Notebook {
     writable: boolean;
 }
 
+export interface Folder {
+    name: string;
+    path: string;
+    type: "folder";
+}
+
+export type NotebookItem = Notebook | Folder;
+
+export async function getAllNotebooks(): Promise<Notebook[]> {
+    const db = await openDatabase();
+
+    return new Promise((resolve, reject) => {
+        const transaction = db.transaction([STORE_NAME], "readonly");
+        const store = transaction.objectStore(STORE_NAME);
+        const request = store.getAll();
+
+        request.onsuccess = () => resolve(request.result || []);
+        request.onerror = () => reject(request.error);
+    });
+}
+
+export async function getNotebookByPath(
+    path: string
+): Promise<Notebook | null> {
+    const db = await openDatabase();
+
+    return new Promise((resolve, reject) => {
+        const transaction = db.transaction([STORE_NAME], "readonly");
+        const store = transaction.objectStore(STORE_NAME);
+        const request = store.get(path);
+
+        request.onsuccess = () => resolve(request.result || null);
+        request.onerror = () => reject(request.error);
+    });
+}
+
+export async function checkNameUnique(
+    name: string,
+    parentPath: string
+): Promise<boolean> {
+    const notebooks = await getAllNotebooks();
+    const fullPath = parentPath ? `${parentPath}/${name}` : name;
+
+    // Check if any notebook has this exact path
+    return !notebooks.some((nb) => nb.path === fullPath);
+}
+
 export async function saveNotebook(notebook: Notebook): Promise<string> {
     const db = await openDatabase();
 
@@ -25,8 +72,8 @@ export async function saveNotebook(notebook: Notebook): Promise<string> {
         const transaction = db.transaction([STORE_NAME], "readwrite");
         const store = transaction.objectStore(STORE_NAME);
 
-        // First, check if notebook exists
-        const getRequest = store.get(notebook.id);
+        // Use path as the key since that's what the database uses
+        const getRequest = store.get(notebook.path);
 
         getRequest.onsuccess = () => {
             const existing = getRequest.result;
@@ -44,10 +91,23 @@ export async function saveNotebook(notebook: Notebook): Promise<string> {
             // Now save the notebook
             const putRequest = store.put(notebook);
 
-            putRequest.onsuccess = () => resolve(notebook.id);
+            putRequest.onsuccess = () => resolve(notebook.path);
             putRequest.onerror = () => reject(putRequest.error);
         };
 
         getRequest.onerror = () => reject(getRequest.error);
+    });
+}
+
+export async function deleteNotebook(path: string): Promise<void> {
+    const db = await openDatabase();
+
+    return new Promise((resolve, reject) => {
+        const transaction = db.transaction([STORE_NAME], "readwrite");
+        const store = transaction.objectStore(STORE_NAME);
+        const request = store.delete(path);
+
+        request.onsuccess = () => resolve();
+        request.onerror = () => reject(request.error);
     });
 }
